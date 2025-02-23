@@ -52,4 +52,4 @@ def upload_file(request):
         
         return JsonResponse(validation_result)
     
-    return render(request, 'templates/cargar_archivo.html')
+    return render(request, 'cargar_archivo.html')
