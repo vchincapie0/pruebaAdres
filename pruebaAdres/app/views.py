@@ -1,54 +1,59 @@
 import csv
 import re
-from django.shortcuts import render
+import os
+from django.shortcuts import render, redirect
 from django.core.files.storage import FileSystemStorage
-from django.http import JsonResponse
+from django.contrib import messages
 
-def validate_csv(file_path):
+
+def validar_archivo(file):
     errors = []
-    with open(file_path, newline='', encoding='utf-8') as file:
-        reader = csv.reader(file)  # Sigue leyéndolo como CSV
-        rows = list(reader)
+    file_content = file.read().decode("utf-8").splitlines()
+    reader = csv.reader(file_content, delimiter=",")
 
-        # Validar número de columnas
-        if len(rows[0]) != 5:
-            return {'error': 'El archivo debe contener exactamente 5 columnas'}
+    for index, row in enumerate(reader, start=1):
+        if len(row) != 5:
+            errors.append(f"❌ Fila {index}: Número incorrecto de columnas ({len(row)} en lugar de 5).")
+            continue
 
-        for i, row in enumerate(rows, start=1):
-            if len(row) != 5:
-                errors.append(f'Fila {i}: Número incorrecto de columnas')
-                continue
+        # Validaciones individuales por columna
+        if not re.match(r"^\d{3,10}$", row[0]):
+            errors.append(f"⚠️ Fila {index}, Columna 1: Debe ser un número entre 3 y 10 caracteres.")
 
-            # Validaciones específicas de cada columna
-            if not re.fullmatch(r'\d{3,10}', row[0]):
-                errors.append(f'Fila {i}, Columna 1: Debe ser un número entre 3 y 10 caracteres')
+        if not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", row[1]):
+            errors.append(f"⚠️ Fila {index}, Columna 2: Correo electrónico inválido.")
 
-            if not re.fullmatch(r'^[\w\.-]+@[\w\.-]+\.\w+$', row[1]):
-                errors.append(f'Fila {i}, Columna 2: Formato de correo inválido')
+        if row[2] not in ["CC", "TI"]:
+            errors.append(f"⚠️ Fila {index}, Columna 3: Solo se permiten los valores 'CC' o 'TI'.")
 
-            if row[2] not in ['CC', 'TI']:
-                errors.append(f'Fila {i}, Columna 3: Solo se permite "CC" o "TI"')
+        try:
+            salario = int(row[3])
+            if salario < 500000 or salario > 1500000:
+                errors.append(f"⚠️ Fila {index}, Columna 4: El valor debe estar entre 500000 y 1500000.")
+        except ValueError:
+            errors.append(f"⚠️ Fila {index}, Columna 4: Debe ser un número.")
 
-            try:
-                value = int(row[3])
-                if not (500000 <= value <= 1500000):
-                    errors.append(f'Fila {i}, Columna 4: Debe estar entre 500000 y 1500000')
-            except ValueError:
-                errors.append(f'Fila {i}, Columna 4: No es un número válido')
+    return errors
 
-    return {'errors': errors} if errors else {'success': 'Archivo validado correctamente'}
 
-def upload_file(request):
-    if request.method == 'POST' and request.FILES['file']:
-        file = request.FILES['file']
-        if not file.name.endswith('.csv') and not file.name.endswith('.txt'):
-            return JsonResponse({'error': 'Solo se permiten archivos CSV o TXT'})
+def cargar_archivo(request):
+    if request.method == "POST":
+        file = request.FILES.get("file")
+        if not file:
+            messages.error(request, "❌ No se ha seleccionado ningún archivo.")
+            return redirect("cargar_archivo")
 
-        fs = FileSystemStorage()
-        filename = fs.save(file.name, file)
-        file_path = fs.path(filename)
+        if not file.name.endswith(".txt"):
+            messages.error(request, "❌ Solo se permiten archivos .txt")
+            return redirect("cargar_archivo")
 
-        validation_result = validate_csv(file_path)
-        return JsonResponse(validation_result)
+        errors = validar_archivo(file)
+        if errors:
+            for error in errors:
+                messages.error(request, error)
+        else:
+            messages.success(request, "✅ Archivo validado con éxito. No se encontraron errores.")
 
-    return render(request, 'cargar_archivo.html')
+        return redirect("cargar_archivo")
+
+    return render(request, "cargar_archivo.html")
